@@ -12,19 +12,57 @@ ValueScout is a Python Flask-based price tracker that:
 ✔ Shows notifications inside the website
 🚀 How to Run
 
-1️⃣ Install dependencies:
+✅ VALUE SCOUT — QUICK SETUP GUIDE (For Demo Laptop)
+1. Install Software
+
+Install Python 3
+
+Install MySQL Server + Workbench
+
+MySQL password must be: root
+
+2. Set Up Database
+
+Open MySQL Workbench
+
+Login (user: root, pass: root)
+
+Create DB:
+
+CREATE DATABASE value_scout;
+
+
+Import the file: value_scout.sql into this database
+
+3. Set Up the Project
+
+Download project folder (from GitHub/ZIP)
+
+Open terminal inside the project folder
+
+Install dependencies:
+
 pip install -r requirements.txt
 
-2️⃣ Import Database
+4. Run the Website
 
-Use MySQL Workbench → Server → Data Import
-Import value_scout.sql
+Inside project folder:
 
-3️⃣ Run the server:
 python app.py
 
-4️⃣ Run the price tracker:
+
+Open browser:
+
+http://127.0.0.1:5000
+
+5. Run the Price Tracker
+
+Open a second terminal:
+
 python price_tracker_cron.py
 
 
+This will check prices and send email alerts.
+
+🎉 DONE
 Done!
