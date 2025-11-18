@@ -11,6 +11,7 @@ ValueScout is a Python Flask-based price tracker that:
 ✔ Sends automatic email alerts
 ✔ Shows notifications inside the website
 🚀 How to Run
+
 1️⃣ Install dependencies:
 pip install -r requirements.txt
 
