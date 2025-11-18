@@ -1,0 +1,363 @@
+from flask import Flask, request,redirect, jsonify, send_from_directory,flash, session
+import requests
+import os
+import mysql.connector
+from werkzeug.security import generate_password_hash, check_password_hash
+
+app = Flask(__name__)
+
+#  Secret key for sessions
+app.secret_key = "thisismysecretkeyforsessions"  
+
+# SerpApi key
+SERPAPI_KEY = "9c9ebdb9f7851dff0077e2ca096e4b82023ddbbb7b63fa5264ecaa0550ccdab5"
+
+#database connection
+db = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    password="2426",  
+    database="value_scout"
+)
+cursor = db.cursor(dictionary=True) 
+
+# Serve the login page as root
+@app.route("/")
+def login_page():
+    if "loggedin" in session:
+        return redirect("/frontend")
+    return send_from_directory(os.path.dirname(__file__), "login.html")
+
+
+#Register a user 
+
+# GET request → serve registration page
+@app.route("/register-page")
+def register_page():
+    return send_from_directory(os.path.dirname(__file__), "register.html")
+
+
+# POST request → handle registration form
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.form  # form data from frontend
+    username = data.get("username")
+    email = data.get("email")
+    password = data.get("password")
+
+    if not username or not email or not password:
+        return "Please fill all fields", 400
+
+    hashed_password = generate_password_hash(password)
+
+    try:
+        cursor.execute(
+            "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)",
+            (username, email, hashed_password)
+        )
+        db.commit()
+        return redirect("/")
+    except mysql.connector.IntegrityError:
+        return "Email already registered!", 400
+    
+
+# User login
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.form
+    email = data.get("email")
+    password = data.get("password")
+
+    if not email or not password:
+        return "Please fill all fields", 400
+    
+    cursor.execute("SELECT * FROM users WHERE email=%s", (email,))
+    user = cursor.fetchone()
+
+    if not user:
+        return "Email not registered!", 400
+
+    # Compare password hashes
+    if check_password_hash(user["password_hash"], password):
+        #  Create session with actual user info
+        session["loggedin"] = True
+        session["user_id"] = user["id"]
+        session["username"] = user["username"]
+        session["email"] = user["email"]
+
+        session["just_logged_in"] = True 
+
+        flash(f"Welcome, {user['username']}!", "success")
+        return redirect("/frontend")
+    else:
+        return "Incorrect password!", 400
+
+   # To ensure welcome message displayes once 
+@app.route("/welcome_status")
+def welcome_status():
+    if session.get("just_logged_in"):
+        session.pop("just_logged_in")  
+        return jsonify({"show_welcome": True, "username": session.get("username")})
+    return jsonify({"show_welcome": False})
+
+
+    
+#Frontend of website
+@app.route("/frontend")
+def frontend():
+    if "loggedin" not in session:
+        return redirect("/")
+    return send_from_directory(os.path.dirname(__file__), "frontend.html")
+
+# Display username when user login and session starts
+@app.route("/get_username")
+def get_username():
+    if "loggedin" in session:
+        return jsonify({"username": session["username"]})
+    return jsonify({"username": None})
+
+
+
+
+# ✅ Route to add wishlist item
+@app.route("/add_to_wishlist", methods=["POST"])
+def add_to_wishlist():
+    if "user_id" not in session:
+        return jsonify({"error": "User not logged in"}), 401
+
+    data = request.get_json()
+    user_id = session["user_id"]
+    title = data.get("title")
+
+    # Check if product already exists
+    cursor.execute("SELECT * FROM wishlist WHERE user_id = %s AND title = %s", (user_id, title))
+    existing = cursor.fetchone()
+
+    if existing:
+        # Remove from wishlist if already present
+        cursor.execute("DELETE FROM wishlist WHERE user_id = %s AND title = %s", (user_id, title))
+        db.commit()
+        return jsonify({"message": "Removed from wishlist", "status": "removed"}), 200
+    else:
+        # Add to wishlist
+        cursor.execute("""
+            INSERT INTO wishlist (user_id, title, link, price, thumbnail, rating, reviews, source)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            user_id,
+            data.get("title"),
+            data.get("link"),
+            data.get("price"),
+            data.get("thumbnail"),
+            data.get("rating"),
+            data.get("reviews"),
+            data.get("source"),
+        ))
+        db.commit()
+        return jsonify({"message": "Added to wishlist", "status": "added"}), 200
+
+# Wishlist page route
+@app.route("/wishlist")
+def wishlist_page():
+    if "loggedin" not in session:
+        return redirect("/")
+    return send_from_directory(os.path.dirname(__file__), "wishlist.html")
+
+
+@app.route("/wishlist_data")
+def wishlist_data():
+    if "user_id" not in session:
+        return jsonify({"error": "User not logged in"}), 401
+
+    user_id = session["user_id"]
+    cursor.execute("SELECT * FROM wishlist WHERE user_id = %s", (user_id,))
+    items = cursor.fetchall()
+    return jsonify(items)
+
+@app.route("/remove_from_wishlist", methods=["POST"])
+def remove_from_wishlist():
+    if "user_id" not in session:
+        return jsonify({"error": "User not logged in"}), 401
+
+    data = request.get_json()
+    title = data.get("title")
+    user_id = session["user_id"]
+
+    cursor.execute("DELETE FROM wishlist WHERE user_id = %s AND title = %s", (user_id, title))
+    db.commit()
+
+    return jsonify({"message": "Item removed"}), 200
+
+
+# Get tracked items
+@app.route("/wishlist_tracking", methods=["GET"])
+def get_tracking():
+    if "user_id" not in session:
+        return jsonify([])
+
+    user_id = session["user_id"]
+    cursor.execute("SELECT * FROM wishlist_tracking WHERE user_id=%s", (user_id,))
+    tracks = cursor.fetchall()
+    return jsonify(tracks)
+
+# Add or update tracking
+@app.route("/track_wishlist_item", methods=["POST"])
+def track_wishlist_item():
+    if "user_id" not in session:
+        return jsonify({"error": "Not logged in"}), 401
+
+    data = request.get_json()
+    title = data.get("title")
+    target_price = data.get("target_price")
+    user_id = session["user_id"]
+
+    # Check if already tracked
+    cursor.execute("SELECT * FROM wishlist_tracking WHERE user_id=%s AND title=%s", (user_id, title))
+    existing = cursor.fetchone()
+
+    if existing:
+        # Remove tracking
+        cursor.execute("DELETE FROM wishlist_tracking WHERE user_id=%s AND title=%s", (user_id, title))
+        db.commit()
+        return jsonify({"status": "removed"})
+    else:
+        # Add tracking
+        cursor.execute("INSERT INTO wishlist_tracking (user_id, title, target_price) VALUES (%s,%s,%s)",
+                       (user_id, title, target_price))
+        db.commit()
+        return jsonify({"status": "added"})
+    
+
+# cron reads and sends data here
+@app.route("/api/get_tracked_items")
+def api_get_tracked_items():
+    cursor.execute("""
+        SELECT wishlist_tracking.*, users.email 
+        FROM wishlist_tracking 
+        JOIN users ON wishlist_tracking.user_id = users.id
+    """)
+    items = cursor.fetchall()
+    return jsonify(items)
+
+@app.route("/api/add_notification", methods=["POST"])
+def api_add_notification():
+    data = request.get_json()
+    cursor.execute("""
+        INSERT INTO notifications (user_id, title, current_price, target_price)
+        VALUES (%s, %s, %s, %s)
+    """, (data["user_id"], data["title"], data["current_price"], data["target_price"]))
+    db.commit()
+    return jsonify({"message": "Notification added"}), 200
+
+
+
+
+
+# Amazon product search route
+@app.route("/search", methods=["GET"])
+def search_amazon():
+    query = request.args.get("q")
+    if not query:
+        return jsonify({"error": "Missing search query"}), 400
+
+    url = "https://serpapi.com/search"
+    params = {
+        "engine": "amazon",
+        "api_key": SERPAPI_KEY,
+        "amazon_domain": "amazon.in",  # You can switch to "amazon.com" if needed
+        "k": query
+    }
+
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+
+        # Debug output
+        print("Status Code:", response.status_code)
+        print("Headers:", response.headers)
+        print("Raw Response:", response.text[:500])
+
+        if "application/json" not in response.headers.get("Content-Type", ""):
+            return jsonify({"error": "Invalid response format from SerpApi"}), 500
+
+        data = response.json()
+    except Exception as e:
+        return jsonify({"error": f"Error fetching Amazon results: {str(e)}"}), 500
+
+    results = []
+    for item in data.get("organic_results", [])[:20]:
+        price_data = item.get("price")
+        price = price_data.get("raw") if isinstance(price_data, dict) else price_data
+
+        results.append({
+            "title": item.get("title"),
+            "link": item.get("link"),
+            "price": price,
+            "thumbnail": item.get("thumbnail"),
+            "rating": item.get("rating"),
+            "reviews": item.get("reviews"),
+            "source": "Amazon"
+        })
+
+    return jsonify(results)
+
+
+
+# Flipkart search route via Google Shopping
+@app.route("/flipkart", methods=["GET"])
+def search_flipkart():
+    query = request.args.get("q")
+    if not query:
+        return jsonify({"error": "Missing search query"}), 400
+
+    url = "https://serpapi.com/search"
+    params = {
+        "engine": "google_shopping",
+        "api_key": SERPAPI_KEY,
+        "q": query,
+        "google_domain": "google.co.in",
+        "hl": "en",
+        "gl": "in"
+    }
+
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+
+        print("Flipkart raw response:", response.text[:1000])  # Print first 1000 characters
+
+
+        if "application/json" not in response.headers.get("Content-Type", ""):
+            return jsonify({"error": "Invalid response format from SerpApi"}), 500
+
+        data = response.json()
+    except Exception as e:
+        return jsonify({"error": f"Error fetching Flipkart results: {str(e)}"}), 500
+
+    results = []
+    for item in data.get("shopping_results", [])[:20]:
+     
+    # if "flipkart.com" in link:
+     results.append({
+    "title": item.get("title"),
+    "link": item.get("product_link"),
+    "price": item.get("price"),
+    "thumbnail": item.get("thumbnail") or "",
+    "rating": item.get("rating") or "N/A",
+    "reviews": item.get("reviews") or "N/A",
+    "source": item.get("source") or "Google Shopping"
+})
+
+
+    print("Filtered Flipkart products:", len(results))  # Confirm count
+    return jsonify(results)
+
+
+
+
+
+
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Your Wishlist ❤️</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background-color: #f5f5f5;
+    margin: 30px;
+  }
+
+  h2 {
+    text-align: center;
+  }
+
+  button.back {
+    display: inline-block;
+    margin-bottom: 20px;
+    padding: 10px 15px;
+    background: #333;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  button.back:hover {
+    background: #555;
+  }
+
+  #wishlist-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 25px;
+    max-width: 1200px;
+    margin: 20px auto;
+  }
+
+  .product-card {
+    width: 300px;
+    background-color: #fff;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    transition: transform 0.2s, background-color 0.3s;
+  }
+
+  .product-card.tracked {
+    background-color: #d4fcd4; /* light green if tracked */
+  }
+
+  .product-card:hover {
+    transform: scale(1.03);
+  }
+
+  .product-card img {
+    width: 100%;
+    height: 180px;
+    object-fit: contain;
+    margin-bottom: 10px;
+  }
+
+  .product-card h4 {
+    margin: 5px 0;
+    font-size: 16px;
+  }
+
+  .product-card p {
+    margin: 3px 0;
+    font-size: 14px;
+    color: #555;
+  }
+
+  .wishlist {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 22px;
+    color: red;
+    cursor: pointer;
+    transition: transform 0.2s;
+  }
+
+  .wishlist:hover {
+    transform: scale(1.2);
+  }
+
+  .track-section {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .track-section input {
+    padding: 6px;
+    font-size: 14px;
+  }
+
+  .track-btn {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    font-size: 18px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 35px;
+    height: 35px;
+    cursor: pointer;
+    transition: background 0.3s, transform 0.2s;
+  }
+
+  .track-btn:hover {
+    background: #0056b3;
+    transform: scale(1.2);
+  }
+
+  .price-status {
+    margin-top: 8px;
+    font-size: 13px;
+    font-weight: bold;
+  }
+  .notification-box {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.notification-box.removed {
+  opacity: 0;
+  transform: translateY(-5px);
+}
+
+
+  /* Toast message */
+  #toast {
+    visibility: hidden;
+    min-width: 250px;
+    margin-left: -125px;
+    background-color: #333;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 10px;
+    position: fixed;
+    z-index: 1;
+    left: 50%;
+    bottom: 30px;
+    font-size: 15px;
+  }
+
+  #toast.show {
+    visibility: visible;
+    animation: fadein 0.5s, fadeout 0.5s 2.5s;
+  }
+
+
+  .notification-box {
+  margin-top: 10px;
+  padding: 8px;
+  background: #fffbe6;
+  border: 1px solid #ffd24d;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #444;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.notif p {
+  margin: 0;
+  font-weight: 500;
+}
+
+.dismiss-btn {
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.dismiss-btn:hover {
+  background: #1f8b3b;
+}
+
+
+  @keyframes fadein {
+    from {bottom: 0; opacity: 0;}
+    to {bottom: 30px; opacity: 1;}
+  }
+
+  @keyframes fadeout {
+    from {bottom: 30px; opacity: 1;}
+    to {bottom: 0; opacity: 0;}
+  }
+</style>
+</head>
+<body>
+
+<button class="back" onclick="window.location.href='/frontend'">← Back to Home</button>
+<h2>Your Wishlist ❤️</h2>
+
+<div id="wishlist-container"></div>
+<div id="toast"></div>
+
+<script>
+function showToast(message) {
+  const toast = document.getElementById("toast");
+  toast.textContent = message;
+  toast.className = "show";
+  setTimeout(() => toast.className = toast.className.replace("show", ""), 3000);
+}
+
+function parsePrice(p) {
+  if (!p) return 0;
+  return parseFloat(p.toString().replace(/[₹,]/g, ""));
+}
+
+async function toggleTrack(card, title, asin) {
+  const targetInput = card.querySelector("input");
+  const status = card.querySelector(".price-status");
+  const targetPrice = parseFloat(targetInput.value);
+  const currentPrice = parsePrice(card.querySelector("p").textContent.replace("Price:", "").trim());
+
+  if (!card.classList.contains("tracked") && (isNaN(targetPrice) || targetPrice <= 0)) {
+    alert("Enter a valid positive target price.");
+    return;
+  }
+
+  if (targetPrice > currentPrice) {
+    alert(`Target price cannot be higher than current price ₹${currentPrice}`);
+    return;
+  }
+
+  const res = await fetch("/track_wishlist_item", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, asin, target_price: targetPrice })
+  });
+
+
+  const result = await res.json();
+
+  if (result.status === "added") {
+    card.classList.add("tracked");
+    status.textContent = `📊 Tracking... Will alert when price ≤ ₹${targetPrice}`;
+    status.style.color = "blue";
+    showToast("Item is being tracked ✅");
+  } else {
+    card.classList.remove("tracked");
+    status.textContent = "";
+    targetInput.value = "";
+    showToast("Tracking removed ❌");
+  }
+}
+
+
+async function loadWishlist() {
+  const container = document.getElementById("wishlist-container");
+  container.innerHTML = "<p>Loading...</p>";
+
+  try {
+    // Fetch wishlist items
+    const res = await fetch("/wishlist_data");
+    const items = await res.json();
+
+    // Fetch tracked items
+    const trackRes = await fetch("/wishlist_tracking");
+    const trackedItems = await trackRes.json();
+
+    // Fetch notifications (for price drops)
+    const notifRes = await fetch("/api/get_notifications");
+    const notifications = await notifRes.json();
+
+    if (!Array.isArray(items) || items.length === 0) {
+      container.innerHTML = "<p>No items in your wishlist yet ❤️</p>";
+      return;
+    }
+
+    container.innerHTML = "";
+
+    items.forEach(item => {
+      const card = document.createElement("div");
+      card.className = "product-card";
+      card.dataset.title = item.title;
+
+      card.innerHTML = `
+        <button class="track-btn" title="Track/Remove Track">📈</button>
+        <span class="wishlist">&#10084;</span>
+        <img src="${item.thumbnail || 'https://via.placeholder.com/150'}" alt="Product">
+        <h4><a href="${item.link}" target="_blank">${item.title}</a></h4>
+        <p>Price: ${item.price || 'N/A'}</p>
+        <p>Rating: ${item.rating || 'N/A'} | Reviews: ${item.reviews || 'N/A'}</p>
+        <p><strong>Source:</strong> ${item.source}</p>
+
+        <div class="track-section">
+          <input type="number" placeholder="Enter target price" min="1">
+          <p class="price-status"></p>
+        </div>
+      `;
+      container.appendChild(card);
+
+      // --- Wishlist remove ---
+      const wishlistIcon = card.querySelector(".wishlist");
+      wishlistIcon.addEventListener("click", async () => {
+        const title = card.dataset.title;
+        const res = await fetch("/remove_from_wishlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title })
+        });
+        if (res.ok) {
+          card.remove();
+          showToast("Removed from wishlist ❤️");
+        }
+      });
+
+      // --- Track button click ---
+      const trackBtn = card.querySelector(".track-btn");
+      trackBtn.addEventListener("click", () =>
+        toggleTrack(card, item.title, item.asin)
+      );
+
+      // --- Check if already tracked ---
+      const tracked = trackedItems.find(t => t.title === item.title);
+      const status = card.querySelector(".price-status");
+      const input = card.querySelector("input");
+
+      if (tracked) {
+        card.classList.add("tracked");
+        input.value = tracked.target_price;
+
+        // Check if notification exists for this item
+        const notif = notifications.find(n => n.title === item.title && n.is_read === 0);
+
+        if (notif) {
+          // 💸 Price dropped
+          status.textContent = `💸 Price dropped! Current ₹${notif.current_price} ≤ Target ₹${notif.target_price} 🎯`;
+          status.style.color = "green";
+
+          // Add dismiss box
+          const notifBox = document.createElement("div");
+          notifBox.className = "notification-box";
+          notifBox.innerHTML = `
+            <p>💰 The price dropped for <b>${item.title}</b><br>
+            Now ₹${notif.current_price} (Target ₹${notif.target_price})</p>
+            <button class="dismiss-btn">Dismiss</button>
+          `;
+          card.appendChild(notifBox);
+
+          const dismissBtn = notifBox.querySelector(".dismiss-btn");
+          dismissBtn.addEventListener("click", async () => {
+            try {
+              await fetch("/api/mark_notification_read", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: notif.id })
+              });
+
+              await fetch("/track_wishlist_item", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ asin: item.asin, title: item.title })
+              });
+
+              notifBox.classList.add("removed");
+              setTimeout(() => notifBox.remove(), 300);
+
+              card.classList.remove("tracked");
+              status.textContent = "";
+              input.value = "";
+              showToast("Tracking stopped and notification dismissed ✅");
+            } catch (err) {
+              console.error("Error dismissing notification:", err);
+              showToast("⚠️ Failed to update notification/tracking");
+            }
+          });
+        } else {
+          // Still tracking normally
+          status.textContent = `📊 Tracking... Will alert when price ≤ ₹${tracked.target_price}`;
+          status.style.color = "blue";
+        }
+      }
+    });
+  } catch (error) {
+    container.innerHTML = `<p style="color:red;">Error: ${error}</p>`;
+  }
+}
+
+
+
+loadWishlist();
+
+</script>
+
+</body>
+</html>
